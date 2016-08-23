@@ -1,0 +1,507 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+    <title>Real-life experiences with react-saga</title>
+
+    <link rel="stylesheet" href="css/reveal.css">
+    <link rel="stylesheet" href="css/theme/moon.css">
+
+    <!-- Theme used for syntax highlighting of code -->
+    <link rel="stylesheet" href="lib/css/tomorrow-night.css">
+
+    <link rel="stylesheet" href="css/styles.css">
+
+    <!-- Printing and PDF exports -->
+    <script>
+      var link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.type = 'text/css';
+      link.href = window.location.search.match(/print-pdf/gi) ?
+        'css/print/pdf.css' : 'css/print/paper.css';
+      document.getElementsByTagName('head')[0].appendChild(link);
+    </script>
+  </head>
+  <body>
+    <div class="reveal">
+      <div class="slides">
+
+        <!-- START SLIDES -->
+        <section>
+          <h1>Real-life experiences with react-saga</h1>
+          <p>ES6 generators, TypeScript 2.0, and more!</p>
+          <small>
+            Futurice WWWeeklies 26.8.2016<br />
+            by Ville Saarinen, <a href="https://twitter.com/vsaarinen">@vsaarinen</a>
+          </small>
+        </section>
+        <section data-background-color="#ffffff">
+          <h2 style="color: #444">My background</h2>
+          <div class="logos flex">
+            <img class="company" src="images/futurice.png" />
+            <img class="company" src="images/flowdock.png" />
+            <img class="company" src="images/sharetribe.png" />
+            <img class="company" src="images/lucify.png" />
+          </div>
+        </section>
+        <section data-background-color="#ffffff">
+          <div class="logos flex">
+            <img class="company big" src="images/lucify.png" />
+          </div>
+        </section>
+        <section>
+          <h2>Minard</h2>
+          <p>
+            A preview server for static web projects
+          </p>
+        </section>
+        <section>
+          <h1>Demo</h1>
+        </section>
+        <section>
+          <h2>Tech stack</h2>
+          <div class="flex">
+            <div>
+              <h3>Backend</h3>
+              <ul>
+                <li>TypeScript 2.0</li>
+                <li>Hapi</li>
+                <li>Docker</li>
+                <li>GitLab</li>
+              </ul>
+            </div>
+            <div>
+              <h3>Frontend</h3>
+              <ul>
+                <li>TypeScript 2.0</li>
+                <li>React</li>
+                <li>Redux</li>
+                <li>Redux-saga</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+        <section>
+          <h2>Async operations in React</h2>
+          <ul>
+            <li class="fragment"><strong>Inline</strong></li>
+          <ul>
+        </section>
+        <section>
+          <pre><code class="ts" data-trim>
+// component.tsx
+const loadData = (dispatch: Dispatch&lt;any&gt;, id: string) => {
+  fetch(`/api/data/${id}`)
+    .then(response =>
+      response.ok ? response.json() : Promise.reject(response.error)
+    ).then(json => {
+      dispatch({
+        type: 'STORE_DATA',
+        data: json
+      });
+    }).catch(error => {
+      dispatch({
+        type: 'DATA_FETCH_FAILED',
+        error: error || 'Something bad happened'
+      });
+    });
+};
+
+loadData(this.props.dispatch, this.props.id);
+          </code></pre>
+          <h3 class="fragment">Problems</h3>
+          <ul>
+            <li class="fragment">Duplicating async code</li>
+            <li class="fragment">Handling race conditions 😬</li>
+          </ul>
+        </section>
+        <section>
+          <h2>Async operations in React</h2>
+          <ul>
+            <li>Inline</li>
+            <li class="fragment"><strong>Centralized logic</strong></li>
+          <ul>
+        </section>
+        <section>
+          <pre><code class="ts" data-trim data-noescape>
+// actions.ts
+const storeData = (data: any) => ({ type: 'STORE_DATA', data });
+const fetchFailed = (error: string) => ({ type: 'FETCH_FAILED', error });
+let inProgressFetches: string[] = [];
+
+const loadData = (dispatch: Dispatch&lt;any&gt;, id: string) => {
+  if (inProgressFetches.indexOf(id) > -1) return;
+
+  inProgressFetches.push(id);
+  fetch(`/api/data/${id}`)
+    .then(response =>
+      response.ok ? response.json() : Promise.reject(response.error)
+    ).then(json => {
+      dispatch(storeData(json));
+      inProgressFetches = inProgressFetches.filter(n => n !== id);
+    }).catch(error => {
+      dispatch(fetchFailed(error));
+      inProgressFetches = inProgressFetches.filter(n => n !== id);
+    });
+};
+
+// component.tsx
+loadData(this.props.dispatch, this.props.id);
+          </code></pre>
+        </section>
+        <section>
+          <h2>Problems</h2>
+          <ul>
+            <li class="fragment">Passing dispatch around</li>
+            <li class="fragment">
+              Two different types of action creators:
+              <ul>
+                <li>Synchronous object creators</li>
+                <li>Asynchronous dispatchers</li>
+              </ul>
+            </li>
+          </ul>
+        </section>
+        <section>
+          <h2>Async operations in React</h2>
+          <ul>
+            <li>Inline</li>
+            <li>Centralized logic</li>
+            <li class="fragment"><strong>Redux-thunk</strong></li>
+          <ul>
+        </section>
+        <section>
+          <pre><code class="ts" data-trim data-noescape>
+// actions.ts
+const storeData = (data: any) => ({ type: 'STORE_DATA', data });
+const fetchFailed = (error: string) => ({ type: 'FETCH_FAILED', error });
+let inProgressFetches: string[] = [];
+
+const loadData = (id: string) => (dispatch: Dispatch<any>) => {
+  if (inProgressFetches.indexOf(id) > -1) return;
+
+  inProgressFetches.push(id);
+  fetch(`/api/data/${id}`)
+    .then(response =>
+      response.ok ? response.json() : Promise.reject(response.error)
+    ).then(json => {
+      dispatch(storeData(json));
+      inProgressFetches = inProgressFetches.filter(n => n !== id);
+    }).catch(error => {
+      dispatch(fetchFailed(error));
+      inProgressFetches = inProgressFetches.filter(n => n !== id);
+    });
+};
+
+// component.tsx
+dispatch(loadData(this.props.id));
+          </code></pre>
+        </section>
+        <section>
+          <h2>Problems</h2>
+          <ul>
+            <li class="fragment">…no major ones</li>
+            <li class="fragment">
+              Implementing certain logic is difficult:
+              <ul>
+                <li>Retrying requests</li>
+                <li>Reauth with tokens</li>
+                <li>Cancelling requests</li>
+              </ul>
+            </li>
+          </ul>
+        </section>
+        <section>
+          <h2>Async operations in React</h2>
+          <ul>
+            <li>Inline</li>
+            <li>Centralized logic</li>
+            <li>Redux-thunk</li>
+            <li class="fragment"><strong>Redux-saga</strong></li>
+          <ul>
+        </section>
+        <section>
+          <h2>Refresher: ES6 generators</h2>
+        </section>
+        <section>
+          <pre><code data-trim class="javascript">
+function *foo() {
+  console.log('inside *foo');
+  const firstYieldReturn = yield 1;
+  console.log('inside *foo: firstYieldReturn', firstYieldReturn);
+  const secondYieldReturn = yield 2;
+  console.log('inside *foo: secondYieldReturn', secondYieldReturn);
+  return 3;
+}
+
+const iterator = foo();
+          </code></pre>
+        </section>
+        <section>
+          <h2>Async operations in React</h2>
+          <ul>
+            <li>Inline</li>
+            <li>Centralized logic</li>
+            <li>Redux-thunk</li>
+            <li><strong>Redux-saga</strong></li>
+          <ul>
+        </section>
+        <section>
+          <h2>Redux-saga</h2>
+          <p>
+            Sagas are like <em>long-running background processes</em>.<br />
+            The idea comes from the database field, from a paper published in 1987.
+          </p>
+          <p class="fragment">
+            Redux-saga is a Redux middleware that provides saga functionality using
+            ES6 generators.
+          </p>
+          <p class="fragment">
+            Redux-saga allows you to intercept Redux actions and do funky stuff using
+            <em>effects</em>.
+          </p>
+        </section>
+        <section data-transition="slide-in fade-out">
+          <h2>Redux-saga effects</h2>
+          <p>
+            Redux-saga effects are simply Javascript objects. They are yielded to
+            the Redux-saga middleware to tell it what to do.
+          </p>
+          <p class="fragment">
+            The Redux-saga library comes with built-in support for certain types
+            of effects, along with effect creators. Using these primitives, you can
+            do some really powerful stuff.
+          </p>
+        </section>
+        <section data-transition="fade-in slide-out">
+          <h2>Redux-saga effects</h2>
+          <ul class="no-bullets">
+            <li>
+              <strong>take</strong>: Wait until the specified Redux action and return it.
+            </li>
+            <li class="fragment">
+              <strong>put</strong>: Pass the given action to the Redux store.
+            </li>
+            <li class="fragment">
+              <strong>select</strong>: Get a value out of the Redux state tree.
+            </li>
+            <li class="fragment">
+              <strong>call</strong>: Call the given function (blocking), returning its value.
+            </li>
+            <li class="fragment">
+              <strong>fork</strong>: Call the given function (non-blocking), returning a reference to it.
+            </li>
+            <li class="fragment">
+              <strong>join</strong>: Wait until the referenced forked function terminates.
+            </li>
+            <li class="fragment">
+              <strong>cancel</strong>: Cancel the referenced forked function.
+            </li>
+            <li class="fragment">
+              <strong>race</strong>: Return when one of the given functions returns, cancelling the rest.
+            </li>
+          </ul>
+        </section>
+        <section>
+          <h2>Setting it up</h2>
+          <pre><code data-trim class="ts">
+// createStore.ts
+import { applyMiddleware, createStore } from 'redux';
+import saga from './sagas';
+import reducer from './reducers';
+
+const sagaMiddleware = createSagaMiddleware();
+const store = createStore(reducer, {}, applyMiddleware(sagaMiddleware));
+sagaMiddleware.run(saga);
+          </code></pre>
+        </section>
+        <section>
+          <h2>Triggering</h2>
+          <pre><code data-trim class="ts">
+// sagas/index.ts
+export default function* watchForLoadData(): IterableIterator&lt;Effect&gt; {
+  while (true) {
+    const { id } = yield take('LOAD_DATA');
+
+    yield fork(loadData, id);
+  }
+}
+
+function* loadData(id: string) : IterableIterator&lt;Effect&gt; {
+  const { response, error } = yield call(api.fetchActivities);
+
+  if (response) {
+    yield put({ type: 'STORE_DATA', id, data: response.data });
+  } else {
+    yield put({ type: 'FETCH_ERROR', id, error });
+  }
+}
+
+
+// component.tsx
+dispatch({ type: 'LOAD_DATA', id });
+          </code></pre>
+        </section>
+        <section>
+          <h2>Recipes</h2>
+          <h3>Parallel tasks</h3>
+          <pre><code data-trim class="ts">
+function *fetchUsers(userIds: string[]): IterableIterator&lt;Effect[]&gt; {
+  const users = yield userIds.map(id => call(fetchUser, id));
+  yield put({ type: 'STORE_USERS', users });
+}
+          </code></pre>
+        </section>
+        <section>
+          <h2>Recipes</h2>
+          <h3>Timeouts</h3>
+          <pre><code data-trim class="ts">
+function* fetchPostsWithTimeout(): IterableIterator&lt;Effect&gt; {
+  const { posts, timeout } = yield race({
+    posts: call(fetchApi, '/posts'),
+    timeout: call(delay, 1000)
+  });
+
+  if (posts)
+    put({ type: 'POSTS_RECEIVED', posts });
+  else
+    put({ type: 'TIMEOUT_ERROR' });
+}
+          </code></pre>
+        </section>
+        <section>
+          <h2>Recipes</h2>
+          <h3>Cancelling</h3>
+          <pre><code data-trim class="ts">
+function* backgroundTask(): IterableIterator&lt;Effect&gt; {
+  while (true) { ... }
+}
+
+function* watchStartBackgroundTask(): IterableIterator&lt;Effect&gt; {
+  while (true) {
+    yield take('START_BACKGROUND_TASK');
+    yield race({
+      task: call(backgroundTask),
+      cancel: take('CANCEL_TASK')
+    });
+  }
+}
+          </code></pre>
+        </section>
+        <section>
+          <h2>Recipes</h2>
+          <h3>Debouncing</h3>
+          <pre><code data-trim class="ts">
+const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+function* handleInput(input: string): IterableIterator&lt;Effect&gt; {
+  // debounce by 500ms
+  yield call(delay, 500);
+  ...
+}
+
+function* watchInput() {
+  let task: Task;
+  while (true) {
+    const { input } = yield take('INPUT_CHANGED');
+    if (task) {
+      yield cancel(task);
+    }
+    task = yield fork(handleInput, input);
+  }
+}
+          </code></pre>
+        </section>
+        <section>
+          <h2>Actual code</h2>
+        </section>
+        <section>
+          <h2>Question</h2>
+          <p>
+            Why does <code>call</code> exist?<br />
+            Why not just call the function or generator directly?
+          </p>
+          <h3 class="fragment">Testing becomes awesome!</h3>
+        </section>
+        <section>
+          <h2>Unit testing with Redux-saga</h2>
+          <small class="fragment">aka. mocking is for suckers</small>
+          <p class="fragment">
+            All you're doing is building generators that produce effects,
+            i.e. plain JavaScript objects. No need to mock anything.
+          </p>
+          <p class="fragment">
+            Testing becomes functional, with no side-effects.
+          </p>
+        </section>
+        <section>
+          <h2>Actual tests</h2>
+        </section>
+        <section>
+          <h2>Downsides of Redux-saga</h2>
+          <ul>
+            <li class="fragment">Not all browsers support generators</li>
+            <li class="fragment">Testing requires (some) knowledge of implementation</li>
+            <li class="fragment">Probably overkill for many use cases</li>
+          </ul>
+        </section>
+        <section>
+          <h2>Upsides of Redux-saga</h2>
+          <ul>
+            <li class="fragment">All logic with side-effects in one place</li>
+            <li class="fragment">Even though code is async, it's very easy to follow</li>
+            <li class="fragment">Effects allow you to compose very powerful operations</li>
+            <li class="fragment">Mocking not required for unit tests</li>
+          </ul>
+        </section>
+        <section>
+          <h2>That's about it!</h2>
+          <p>
+            If we have time and any of you are interested, I'd be more than happy
+            to talk about: <strong>TypeScript 2.0</strong>, <strong>what to store
+            in the Redux state while loading in progress or errors</strong>, <strong>structuring
+            React applications</strong>...
+          </p>
+        </section>
+        <section>
+          <h2>Want to pilot Lucify's Minard?</h2>
+          <p>
+            If you're working on static web projects (i.e. projects with no
+            backend in the repo), come talk! We're launching our closed alpha
+            in October.
+          </p>
+        </section>
+
+        <!-- END SLIDES -->
+      </div>
+    </div>
+
+    <script src="lib/js/head.min.js"></script>
+    <script src="js/reveal.js"></script>
+
+    <script>
+      // More info https://github.com/hakimel/reveal.js#configuration
+      Reveal.initialize({
+        history: true,
+        controls: false,
+
+        transition: 'slide', // none/fade/slide/convex/concave/zoom
+        transitionSpeed: 'fast', // default/fast/slow
+
+        // More info https://github.com/hakimel/reveal.js#dependencies
+        dependencies: [
+          { src: 'plugin/markdown/marked.js' },
+          { src: 'plugin/markdown/markdown.js' },
+          { src: 'plugin/notes/notes.js', async: true },
+          {
+            src: 'plugin/highlight/highlight.js',
+            async: true,
+            callback: function() { hljs.initHighlightingOnLoad(); }
+          }
+        ]
+      });
+    </script>
+  </body>
+</html>

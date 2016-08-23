@@ -1,0 +1,41 @@
+img.company {
+  padding-right: 30px !important;
+  max-width: 250px !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+img.company.big {
+  max-width: 600px !important;
+}
+
+div.logos {
+  align-items: center;
+}
+
+div.flex {
+  justify-content: space-around;
+  display: flex;
+}
+
+.reveal pre {
+  width: 95%;
+}
+
+.reveal pre code {
+  max-height: 600px;
+}
+
+.reveal pre code.small {
+  font-size: 90%;
+}
+
+.no-bullets li {
+  list-style-type: none;
+  padding-bottom: 14px;
+  line-height: 1.1;
+}
+
+.no-bullets li strong {
+  color: #ccc;
+}
